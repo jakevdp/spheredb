@@ -12,12 +12,12 @@ setup afw
 """
 import os, sys
 sys.path.append(os.path.abspath('..'))
-import re
 
 from spheredb.lsst_warp import LSSTWarper
 
 
 #from spheredb.get_data import all_lsst_files
+import re
 LSST_DIR = os.path.expanduser("~/research/LSST_IMGS")
 def all_lsst_files(lsst_dir=LSST_DIR):
     R = re.compile("^S[0-2][0-2]\.fits$")
