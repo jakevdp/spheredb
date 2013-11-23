@@ -1,3 +1,5 @@
+*~
+
 *.py[cod]
 
 # C extensions
@@ -34,3 +36,10 @@ nosetests.xml
 .mr.developer.cfg
 .project
 .pydevproject
+
+
+# Some binary file types
+*.fit
+*.fits
+*.bz2
+*.tgz
