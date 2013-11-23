@@ -38,13 +38,17 @@ def get_stripe82_file(rerun, run, camcol=1, filter='u', framenum=1):
     return hdulist
 
 
-def all_lsst_exposures(lsst_dir=LSST_DIR):
+def all_lsst_files(lsst_dir=LSST_DIR):
     R = re.compile("^S[0-2][0-2]\.fits$")
     exposures = []
     for dirpath, dirnames, filenames in os.walk(lsst_dir):
         for f in filter(R.match, filenames):
-            hdulist = pyfits.open(os.path.join(dirpath, f))
-            yield hdulist
+            yield os.path.join(dirpath, f)
+
+
+def all_lsst_exposures(lsst_dir=LSST_DIR):
+    for f in all_lsst_files(lsst_dir):
+        yield pyfits.open(f)
 
 
 
