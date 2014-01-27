@@ -6,9 +6,9 @@ https://dev.lsstcorp.org/trac/wiki/Installing
 
 After install, run the following (adapting for your install path):
 
-source ~/LSST_STACK/loadLSST.sh
-setup python
-setup afw
+[~]$ source ~/LSST_STACK/loadLSST.sh
+[~]$ setup python
+[~]$ setup afw
 """
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
@@ -46,6 +46,7 @@ class LSSTWarper(object):
         return afwImage.makeWcs(ps)
 
     def warped_from_fits(self, fitsfile):
+        """Return a warped exposure computed from an LSST exposure"""
         exp = afwImage.ExposureF(fitsfile)
         wcs_in = exp.getWcs()
         wcs_out = self.make_wcs(self.cdelt, 'deg')
@@ -57,3 +58,34 @@ class LSSTWarper(object):
     def warp_and_save(self, infile, outfile):
         warpedExposure = self.warped_from_fits(infile)
         warpedExposure.writeFits(outfile)
+
+    def sparse_from_fits(self, fitsfile):
+        """Return a sparse HPX array from an LSST exposure"""
+        import numpy as np
+        from scipy.sparse import coo_matrix
+        warped = self.warped_from_fits(fitsfile)
+
+        img = warped.getMaskedImage()
+        x0, y0 = img.getXY0()
+        y0 += int(np.round(90 / self.cdelt))
+
+        Nx = img.getWidth()
+        Nx_tot = int(np.round(180. / self.cdelt))
+
+        Ny = img.getHeight()
+        Ny_tot = int(np.round(90. / self.cdelt))
+
+        img, mask, err = img.getArrays()
+
+        ix = np.arange(x0, x0 + Nx, dtype=np.int64)
+        iy = np.arange(y0, y0 + Ny, dtype=np.int64)
+        ix, iy = np.meshgrid(ix, iy)
+
+        ix, iy, img = map(np.ravel, (ix, iy, img))
+        good_pixels = ~np.isnan(img)
+        ix = ix[good_pixels]
+        iy = iy[good_pixels]
+        img = img[good_pixels]
+
+        return coo_matrix((img, (iy, ix)),
+                          shape=(Ny_tot, Nx_tot))
