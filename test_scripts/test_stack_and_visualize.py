@@ -15,4 +15,11 @@ from spheredb.scidb_tools import HPXPixels3D
 
 filenames = glob.glob("/home/jakevdp/research/LSST_IMGS/*/R*/S*.fits")
 HPX_data = HPXPixels3D(input_files=filenames[:2])
-print HPX_data.unique_times()
+print HPX_data.arr.shape
+
+time = HPX_data.unique_times()[0]
+sliced = HPX_data.time_slice(time)
+print sliced.arr.shape
+
+coadded = HPX_data.coadd()
+print coadded.arr.shape

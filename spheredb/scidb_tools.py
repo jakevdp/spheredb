@@ -42,5 +42,29 @@ class HPXPixels3D(object):
                 self.sdb.query("insert({0}, {1})",
                                arr, self.arr)
 
+    def time_slice(self, time1, time2=None):
+        if time2 is None:
+            return HPXPixels2D(self, self.arr[:, :, time1])
+        else:
+            raise NotImplementedError()
+
+    def coadd(self):
+        return HPXPixels2D(self, self.arr.sum(2))
+
     def unique_times(self):
         return self.arr.max((0, 1)).tosparse()['time']
+
+
+class HPXPixels2D(object):
+    """Container for 2D LSST Pixels stored in SciDB"""
+    def __init__(self, pix3d, arr):
+        self.pix3d = pix3d
+        self.sdb = pix3d.sdb
+        self.arr = arr
+
+    def regrid(self, *args):
+        return HPXPixels2D(self.pix3d, self.arr.regrid(*args))
+
+    def subarray(self, xlim, ylim):
+        return HPXPixels2D(self.pix3d, self.arr[xlim[0]:xlim[1],
+                                                ylim[0]:ylim[1]])
