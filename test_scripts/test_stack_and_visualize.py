@@ -14,12 +14,12 @@ sys.path.append(os.path.abspath('..'))
 from spheredb.scidb_tools import HPXPixels3D
 
 filenames = glob.glob("/home/jakevdp/research/LSST_IMGS/*/R*/S*.fits")
-HPX_data = HPXPixels3D(input_files=filenames[:2])
-print HPX_data.arr.shape
+print "total number of files:", len(filenames)
 
-time = HPX_data.unique_times()[0]
-sliced = HPX_data.time_slice(time)
-print sliced.arr.shape
+HPX_data = HPXPixels3D(input_files=filenames[:20],
+                       name='LSSTdata', force_reload=False)
+times = HPX_data.unique_times()
 
-coadded = HPX_data.coadd()
-print coadded.arr.shape
+for time in times:
+    tslice = HPX_data.time_slice(time)
+    print time, tslice.arr.shape, tslice.arr.nonempty()

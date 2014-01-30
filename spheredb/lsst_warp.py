@@ -19,10 +19,12 @@ import numpy as np
 
 class LSSTWarper(object):
     """Tools to warp input fits data to a HEALPix grid."""
-    def __init__(self, cunit='arcsec', cdelt=1, kernel='lanczos2'):
+    def __init__(self, cunit='arcsec', cdelt=1, kernel='lanczos2',
+                 interface=None):
         self.kernel = kernel
         self.cdelt = cdelt
         self.cunit = cunit.lower().strip()
+        self.interface = interface
         if self.cunit not in ['deg', 'arcmin', 'arcsec']:
             raise ValueError("cunit='{0}' not recognized".format(self.cunit))
 
@@ -124,30 +126,38 @@ class LSSTWarper(object):
         return sparse.coo_matrix((img, (iy, ix)),
                                  shape=(self.Ny, self.Nx))
 
-    def scidb2d_from_fits(self, filename, sdb):
+    def scidb2d_from_fits(self, filename):
         """Return a SciDB array from a fits file"""
-        sp = self.sparse_from_fits(filename)
-        return sdb.from_sparse(sp)
+        if self.interface is None:
+            raise ValueError("scidb interface must be defined")
 
-    def scidb3d_from_fits(self, fitsfile, sdb):
+        sp = self.sparse_from_fits(filename)
+        return self.interface.from_sparse(sp)
+
+    def scidb3d_from_fits(self, fitsfile):
+        if self.interface is None:
+            raise ValueError("scidb interface must be defined")
+            
         time = self.get_exposure_date(fitsfile)
         warped = self.sparse_from_fits(fitsfile)
-        warped_data = np.zeros(warped.nnz,
-                               dtype=[('time', np.int64),
-                                      ('x', np.int64),
-                                      ('y', np.int64),
-                                      ('val', np.float64)])
+            
+        warped_data = np.zeros(warped.nnz, dtype=[('time', np.int64),
+                                                  ('x', np.int64),
+                                                  ('y', np.int64),
+                                                  ('val', np.float64)])
 
         warped_data['time'] = int(time * 24 * 60 * 60)
         warped_data['x'] = warped.row
         warped_data['y'] = warped.col
         warped_data['val'] = warped.data
 
-        warped_arr = sdb.from_array(warped_data)
-        redimensioned = sdb.new_array(shape=(self.Nx, self.Ny, self.Nt),
-                                      dtype='<val:double>',
-                                      dim_names=('x', 'y', 'time'))
-        sdb.query('redimension_store({0}, {1})',
-                  warped_arr, redimensioned)
+        warped_arr = self.interface.from_array(warped_data)
+        redimensioned = self.interface.new_array(shape=(self.Nx, self.Ny,
+                                                        self.Nt),
+                                                 dtype='<val:double>',
+                                                 dim_names=('x', 'y', 'time'))
+        self.interface.query('redimension_store({0}, {1})',
+                             self.interface.from_array(warped_data),
+                             redimensioned)
         return redimensioned
         
