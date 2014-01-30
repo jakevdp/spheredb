@@ -1,7 +1,50 @@
+import numpy as np
+
 from .lsst_warp import LSSTWarper
 from scidbpy import interface
 
 SHIM_DEFAULT = 'http://localhost:8080'
+
+
+def find_index_bounds(arr, sdb, dims=None):
+    """Find the bounds of the nonempty data in an array
+
+    Parameters
+    ----------
+    arr : SciDBArray
+        the input scidb array
+    sdb : SciDBInterface
+        interface to scidb server
+    dims : int, tuple, or None
+    """
+    shape = arr.shape
+    if dims is None:
+        dims = range(len(shape))
+    else:
+        try:
+            dims = tuple(dims)
+        except TypeError:
+            dims = (dims,)
+
+    if(min(dims) < 0 or max(dims) >= len(shape)):
+        raise ValueError("dims out of range")
+
+    # todo: we need some unique dimension names here
+    #       there should be a scidbpy utility for this
+    dim_names = ["_tmp{0:01d}".format(d) for d in dims]
+    query_string = "store(aggregate(apply({A},"
+    query_string += ', '.join("{0}, {{A.d{1}}}".format(d, i)
+                             for (d, i) in zip(dim_names, dims))
+    query_string += "),"
+    query_string += ", ".join("min({0}), max({0})".format(d)
+                              for d in dim_names)
+    query_string += "), {output})"
+
+    output = sdb.new_array()
+    sdb.query(query_string, A=arr, output=output)
+
+    output = output.toarray()
+    return np.asarray([output[name][0] for name in output.dtype.names])
 
 
 class HPXPixels3D(object):
