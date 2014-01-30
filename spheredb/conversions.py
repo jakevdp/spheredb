@@ -1,4 +1,4 @@
-__all__ = ['HPX_grid_step', 'HPX_grid_size', 'FITS_to_HPX']
+__all__ = ['HPX_grid_step', 'HPX_grid_size', 'FITS_to_HPPX']
 
 import numpy as np
 from scipy import sparse

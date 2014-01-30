@@ -14,42 +14,79 @@ import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
 import lsst.daf.base as dafBase
 
+import numpy as np
+
 
 class LSSTWarper(object):
+    """Tools to warp input fits data to a HEALPix grid."""
     def __init__(self, cunit='arcsec', cdelt=1, kernel='lanczos2'):
         self.kernel = kernel
+        self.cdelt = cdelt
+        self.cunit = cunit.lower().strip()
+        if self.cunit not in ['deg', 'arcmin', 'arcsec']:
+            raise ValueError("cunit='{0}' not recognized".format(self.cunit))
+
+    @classmethod
+    def compute_cdelt_deg(cls, cdelt, cunit):
         cunit = cunit.lower().strip()
         if cunit == 'deg':
-            self.cdelt = cdelt
+            return cdelt
         elif cunit == 'arcmin':
-            self.cdelt = cdelt * 1. / 60.
+            return cdelt * 1. / 60.
         elif cunit == 'arcsec':
-            self.cdelt = cdelt * 1. / 3600.
+            return cdelt * 1. / 3600.
         else:
             raise ValueError("Unrecognized cunit: {0}".format(cunit))
 
-    @staticmethod
-    def make_wcs(cdelt, cunit='deg'):
+    @classmethod
+    def grid_size(cls, cdelt, cunit):
+        """Return Nx, Ny for the given cdelt and cunit"""
+        cdelt = cls.compute_cdelt_deg(cdelt, cunit)
+        Nx = int(np.round(180. / cdelt))
+        Ny = int(np.round(90. / cdelt))
+        return (Nx, Ny)
+
+    @property
+    def cdelt_deg(self):
+        return self.compute_cdelt_deg(self.cdelt, self.cunit)
+
+    @property
+    def Nx(self):
+        return int(np.round(180. / self.cdelt_deg))
+
+    @property
+    def Ny(self):
+        return int(np.round(90. / self.cdelt_deg))
+
+    @property
+    def Nt(self):
+        return int(100000 * 24 * 60 * 60)
+
+    def make_wcs(self):
         """Construct a HEALPix WCS header"""
         ps = dafBase.PropertySet()
         ps.add('NAXIS', 2)
         ps.add('CTYPE1', 'RA---HPX')
         ps.add('CTYPE2', 'DEC--HPX')
-        ps.add('CUNIT1', cunit)
-        ps.add('CUNIT2', cunit)
-        ps.add('CDELT1', cdelt)
-        ps.add('CDELT2', cdelt)
+        ps.add('CUNIT1', 'deg')
+        ps.add('CUNIT2', 'deg')
+        ps.add('CDELT1', self.cdelt_deg)
+        ps.add('CDELT2', self.cdelt_deg)
         ps.add('CRVAL1', 0)
         ps.add('CRVAL2', 0)
         ps.add('CRPIX1', 0)
         ps.add('CRPIX2', 0)
         return afwImage.makeWcs(ps)
 
+    def get_exposure_date(self, fitsfile):
+        metadata = afwImage.ExposureF(fitsfile).getMetadata()
+        return metadata.get('MJD-OBS')
+
     def warped_from_fits(self, fitsfile):
         """Return a warped exposure computed from an LSST exposure"""
         exp = afwImage.ExposureF(fitsfile)
         wcs_in = exp.getWcs()
-        wcs_out = self.make_wcs(self.cdelt, 'deg')
+        wcs_out = self.make_wcs()
         warper = afwMath.Warper(self.kernel)
         warpedExposure = warper.warpExposure(destWcs=wcs_out,
                                              srcExposure=exp)
@@ -61,24 +98,21 @@ class LSSTWarper(object):
 
     def sparse_from_fits(self, fitsfile):
         """Return a sparse HPX array from an LSST exposure"""
-        import numpy as np
-        from scipy.sparse import coo_matrix
+        from scipy import sparse
+
         warped = self.warped_from_fits(fitsfile)
 
         img = warped.getMaskedImage()
         x0, y0 = img.getXY0()
-        y0 += int(np.round(90 / self.cdelt))
+        y0 += self.Ny
 
-        Nx = img.getWidth()
-        Nx_tot = int(np.round(180. / self.cdelt))
-
-        Ny = img.getHeight()
-        Ny_tot = int(np.round(90. / self.cdelt))
+        Nx_img = img.getWidth()
+        Ny_img = img.getHeight()
 
         img, mask, err = img.getArrays()
 
-        ix = np.arange(x0, x0 + Nx, dtype=np.int64)
-        iy = np.arange(y0, y0 + Ny, dtype=np.int64)
+        ix = np.arange(x0, x0 + Nx_img, dtype=np.int64)
+        iy = np.arange(y0, y0 + Ny_img, dtype=np.int64)
         ix, iy = np.meshgrid(ix, iy)
 
         ix, iy, img = map(np.ravel, (ix, iy, img))
@@ -87,5 +121,33 @@ class LSSTWarper(object):
         iy = iy[good_pixels]
         img = img[good_pixels]
 
-        return coo_matrix((img, (iy, ix)),
-                          shape=(Ny_tot, Nx_tot))
+        return sparse.coo_matrix((img, (iy, ix)),
+                                 shape=(self.Ny, self.Nx))
+
+    def scidb2d_from_fits(self, filename, sdb):
+        """Return a SciDB array from a fits file"""
+        sp = self.sparse_from_fits(filename)
+        return sdb.from_sparse(sp)
+
+    def scidb3d_from_fits(self, fitsfile, sdb):
+        time = self.get_exposure_date(fitsfile)
+        warped = self.sparse_from_fits(fitsfile)
+        warped_data = np.zeros(warped.nnz,
+                               dtype=[('time', np.int64),
+                                      ('x', np.int64),
+                                      ('y', np.int64),
+                                      ('val', np.float64)])
+
+        warped_data['time'] = int(time * 24 * 60 * 60)
+        warped_data['x'] = warped.row
+        warped_data['y'] = warped.col
+        warped_data['val'] = warped.data
+
+        warped_arr = sdb.from_array(warped_data)
+        redimensioned = sdb.new_array(shape=(self.Nx, self.Ny, self.Nt),
+                                      dtype='<val:double>',
+                                      dim_names=('x', 'y', 'time'))
+        sdb.query('redimension_store({0}, {1})',
+                  warped_arr, redimensioned)
+        return redimensioned
+        

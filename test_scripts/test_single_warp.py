@@ -2,7 +2,7 @@
 Single LSST Warp
 ----------------
 This tests the warping of a single LSST exposure into a sparse matrix
-representation of a HealPix grid.
+representation of a HEALPix grid.
 """
 import os, sys
 sys.path.append(os.path.abspath('..'))
