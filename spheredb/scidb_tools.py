@@ -118,6 +118,9 @@ class HPXPixels3D(object):
     def unique_times(self):
         return self.arr.max((0, 1)).tosparse()['time']
 
+    def index_bounds(self):
+        bounds = find_index_bounds(self.arr, self.interface)
+        return bounds[:2], bounds[2:4], bounds[4:6]
 
 class HPXPixels2D(object):
     """Container for 2D LSST Pixels stored in SciDB"""
@@ -125,9 +128,22 @@ class HPXPixels2D(object):
         self.pix3d = pix3d
         self.arr = arr
 
+    @property
+    def interface(self):
+        return self.pix3d.interface
+
     def regrid(self, *args):
+        """Parameters
+        
+        N: number of pixels to add in each dimesion
+        aggregrate: scidb aggregate to use
+        """
         return HPXPixels2D(self.pix3d, self.arr.regrid(*args))
 
     def subarray(self, xlim, ylim):
         return HPXPixels2D(self.pix3d, self.arr[xlim[0]:xlim[1],
                                                 ylim[0]:ylim[1]])
+
+    def index_bounds(self):
+        bounds = find_index_bounds(self.arr, self.interface)
+        return bounds[:2], bounds[2:4]
